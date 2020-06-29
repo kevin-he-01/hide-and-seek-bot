@@ -72,6 +72,6 @@ def main():
 try:
     main()
 except Exception:
-    with open('bot-error-log.txt', 'a') as errlog:
+    with open('bot-error.log', 'a') as errlog:
         errlog.write('**** {} Failed ****\n'.format(sys.argv[0]))
         traceback.print_exc(file=errlog)
