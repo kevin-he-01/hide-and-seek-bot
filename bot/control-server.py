@@ -14,7 +14,7 @@ keytodir = {'q': Dir.NORTHWEST, 'w': Dir.NORTH, 'e': Dir.NORTHEAST, 'd': Dir.EAS
 port = 9009
 
 def server_thread():
-    with open('control-server-log.txt', 'w') as log:
+    with open('control-server.log', 'w') as log:
         server(log)
 
 def server(log: open):
