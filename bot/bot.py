@@ -3,7 +3,7 @@ import math
 import random 
 import sys
 
-import socket, traceback, time
+import socket, traceback, time, pickle
 
 # Create new agent
 agent = Agent()
@@ -13,10 +13,16 @@ agent.initialize()
 
 port = 9009
 delay = 0.6 # in seconds
-def getdirectionvalue():
+sizeofsize = 4 # 32-bit
+endianness = 'little'
+def getdirectionvalue(agent):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cs:
         cs.connect(('localhost', port))
-        cs.send(bytes([0x0])) # Get direction instruction
+        cs.send(bytes([0x0]))
+        pobj = pickle.dumps(agent)
+        cs.sendall(len(pobj).to_bytes(sizeofsize, endianness))
+        cs.sendall(pobj)
+        # cs.sendall(bytes([0x0, agent.round_num, agent.id]))
         # return Direction(cs.recv(1)[0])
         return cs.recv(1)[0]
 
@@ -44,7 +50,7 @@ def main():
                 # choose a random direction to move in
                 # myDirection = random.choice(list(Direction)).value
                 # assert False
-                myDirection = getdirectionvalue()
+                myDirection = getdirectionvalue(agent)
 
                 # apply direction to current unit's position to check if that new position is on the game map
                 (x, y) = apply_direction(unit.x, unit.y, myDirection)
