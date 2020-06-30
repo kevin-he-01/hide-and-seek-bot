@@ -20,3 +20,7 @@
         - Is this necessary? maybe do this in `0x0`
     - `0x3`: Notify end of the game
     - `0xff`: Shutdown the server (including the graphic panel), reserved
+## Notes
+- The client shall not hang or delay response when there's a connection to the server (since it will block the ncurses interface)
+    - that applies **even** between instructions, by sending multiple instructions without closing connection, the client must respond swiftly
+    - to perform computationally expensive steps, the client must first close the connection so the server may keep its interface responsive
