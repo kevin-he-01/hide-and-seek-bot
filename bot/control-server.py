@@ -2,93 +2,130 @@
 # Allow a human to operate a bot (seeker or hider) using socket connection
 # For server protocol, see `control-server-protocol.md`
 
-import socket, curses, threading, sys
+import socket, curses, sys, pickle
 
-from kit import Direction as Dir
+from kit import Direction as Dir, Agent, Unit
 
-botdir = Dir.STILL
-dirlock = threading.Lock()
+# botdir = Dir.STILL
 keytodir = {'q': Dir.NORTHWEST, 'w': Dir.NORTH, 'e': Dir.NORTHEAST, 'd': Dir.EAST, 'c': Dir.SOUTHEAST, 'x': Dir.SOUTH,
     'z': Dir.SOUTHWEST, 'a': Dir.WEST, 's': Dir.STILL}
 
 port = 9009
+sizeofsize = 4 # 32-bit
+endianness = 'little'
 
-def server_thread():
-    with open('control-server.log', 'w') as log:
-        server(log)
+# def server(log: open):
+#     pass
 
-def server(log: open):
-    # create an INET, STREAMing socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serversocket:
-        # bind the socket to our private port on localhost
-        serversocket.bind(('localhost', port))
-        # become a server socket
-        serversocket.listen(5)
+def recvall(sock, mlen):
+    buffer = []
+    while len(buffer) < mlen:
+        bys = sock.recv(mlen - len(buffer))
+        if len(bys) == 0:
+            raise RuntimeError('Broken connection: expect {} bytes, only got {} bytes'.format(mlen, len(buffer)))
+        buffer.extend(bys)
+    return bytes(buffer)
 
-        while True:
-            c, _ = serversocket.accept()
-            requesteddir = False
-            with c:
-                data = c.recv(1)
-                if len(data) == 0:
-                    raise RuntimeError("Client unexpectedly ends the stream")
-                inst = data[0]
-                if inst == 0x0:
-                    requesteddir = True
-                    with dirlock:
-                        sdata = bytes([botdir.value])
-                    c.send(sdata)
-                elif inst == 0xff:
-                    return
-                else:
-                    raise RuntimeError("Illegal/unsupported request instruction: 0x{:x}".format(inst))
-            if requesteddir:
-                log.write('Client requested direction.\n')
-                log.flush()
+def objrecv(sock):
+    length = int.from_bytes(recvall(sock, sizeofsize), endianness)
+    return pickle.loads(recvall(sock, length))
 
 def redraw(win):
-    win.move(0, 0)
-    # win.clrtobot()
-    win.clrtoeol()
-    win.addstr('Current Direction: {}'.format(botdir)) # No need to lock since the server (other) thread can only read from (not write to) botdir
+    win.erase()
+    win.addstr(0, 0, 'Waiting for my turn...', curses.A_DIM)
     win.refresh()
 
-def main(stdscr: curses.initscr):
-    server = threading.Thread(target=server_thread)
-    try:
-        server.start()
-        def update_dir(dr):
-            # TODO acquire thread lock before editing direction
-            global botdir
-            with dirlock:
-                botdir = dr
-            redraw(stdscr)
-        curses.cbreak()
-        curses.noecho()
-        curses.curs_set(0)
-        redraw(stdscr)
+def prockey(key):
+    if key == 'l':
+        sys.exit()
 
+def keypoll(win): # Poll ONCE, do nothing if there's no input
+    try:
+        key = win.getkey()
+    except curses.error:
+        pass
+    else:
+        prockey(key)
+
+def procinst(c, inst, wlog, win):
+    wlog('Received instruction from client: {}'.format(hex(inst)))
+    if inst == 0x0:
+        # sdata = bytes([botdir.value])
+        unit: Unit = objrecv(c)
+        assert isinstance(unit, Unit)
+        agent: Agent = objrecv(c)
+        assert isinstance(agent, Agent)
+        win.erase()
+        # win.addstr(0, 0, 'Input your direction: ')
+        win.addstr(0, 0, '{} ID {}> '.format(agent.team.name, unit.id))
+        win.refresh()
         while True:
-            ch = stdscr.getch()
-            if ch == ord('l'):
+            key = win.getkey()
+            prockey(key)
+            try:
+                sdata = bytes([keytodir[key].value])
+            except KeyError:
+                win.addstr(1, 0, 'Invalid input', curses.color_pair(1))
+                win.refresh()
+            else:
+                if c.send(sdata) == 0:
+                    wlog('Client closes stream. Assuming that the competition has ended and exiting...')
+                    sys.exit(3)
                 break
-            if ch < 128:
-                try:
-                    dr = keytodir[chr(ch)]
-                except KeyError:
-                    pass
-                else:
-                    update_dir(dr)
-    finally:
-        # Shut down the server when the graphic panel crashes/closes
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as clientsocket:
-                clientsocket.connect(('localhost', port))
-                clientsocket.send(bytes([0xff]))
-        except ConnectionRefusedError: # OK if the server haven't started yet or crashed
-            if server.is_alive():
-                print('WARNING: Server connection refused yet server thread is still alive!', file=sys.stderr)
-                print('Please manually shut down this server by killing this process if appropriate.', file=sys.stderr)
+        redraw(win)
+    elif inst == 0xff:
+        wlog('Client requested exit')
+        sys.exit()
+    else:
+        raise RuntimeError("Illegal/unsupported request instruction: {}".format(hex(inst)))
+
+poll_delay: float = 1 / 30
+
+def init_color(): # Call this right after initscr
+    curses.start_color()
+    curses.use_default_colors() # VSCode light mode friendly
+    curses.init_pair(1, curses.COLOR_RED, -1) # Warning red color
+
+def main(stdscr: curses.initscr):
+    init_color()
+    curses.cbreak()
+    curses.noecho()
+    curses.curs_set(0)
+    # stdscr.nodelay(True) # Nonblocking
+    redraw(stdscr)
+    with open('control-server.log', 'w') as log:
+        def wlog(s):
+            log.write(s + '\n')
+            log.flush()
+        # create an INET, STREAMing socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serversocket:
+            # bind the socket to our private port on localhost
+            serversocket.bind(('localhost', port))
+            # become a server socket (Allow only one client)
+            serversocket.listen(0)
+            wlog('Server started successfully')
+
+            while True:
+                wlog('Accepting new connections...')
+                c, _ = serversocket.accept()
+                with c:
+                    while True:
+                        c.settimeout(poll_delay) # Curses: nonblocking mode, server: timeout mode 
+                        stdscr.nodelay(True)
+                        while True:
+                            keypoll(stdscr)
+                            try:
+                                data = c.recv(1)
+                            except socket.timeout:
+                                pass
+                            else:
+                                break
+                        stdscr.nodelay(False)
+                        c.settimeout(None) # Clear timeout
+                        if len(data) == 0:
+                            wlog('Client closes connection. No more instructions from this client.')
+                            break
+                        procinst(c, data[0], wlog, stdscr)
 
 if __name__ == "__main__":
     curses.wrapper(main)

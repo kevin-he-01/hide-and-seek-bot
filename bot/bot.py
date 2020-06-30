@@ -11,17 +11,21 @@ agent = Agent()
 # initialize agent
 agent.initialize()
 
+# delay = 0.6 # in seconds
 port = 9009
-delay = 0.6 # in seconds
 sizeofsize = 4 # 32-bit
 endianness = 'little'
-def getdirectionvalue(agent):
+def getdirectionvalue(unit, agent):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cs:
+        def sendobj(obj):
+            pobj = pickle.dumps(obj)
+            cs.sendall(len(pobj).to_bytes(sizeofsize, endianness))
+            cs.sendall(pobj)
+
         cs.connect(('localhost', port))
         cs.send(bytes([0x0]))
-        pobj = pickle.dumps(agent)
-        cs.sendall(len(pobj).to_bytes(sizeofsize, endianness))
-        cs.sendall(pobj)
+        sendobj(unit)
+        sendobj(agent)
         # cs.sendall(bytes([0x0, agent.round_num, agent.id]))
         # return Direction(cs.recv(1)[0])
         return cs.recv(1)[0]
@@ -39,7 +43,7 @@ def main():
         if (agent.team == Team.SEEKER):
             # AI Code for seeker goes here
 
-            time.sleep(delay)
+            # time.sleep(delay)
             for _, unit in enumerate(units):
                 # unit.id is id of the unit
                 # unit.x unit.y are its coordinates, unit.distance is distance away from nearest opponent
@@ -50,7 +54,7 @@ def main():
                 # choose a random direction to move in
                 # myDirection = random.choice(list(Direction)).value
                 # assert False
-                myDirection = getdirectionvalue(agent)
+                myDirection = getdirectionvalue(unit, agent)
 
                 # apply direction to current unit's position to check if that new position is on the game map
                 (x, y) = apply_direction(unit.x, unit.y, myDirection)
