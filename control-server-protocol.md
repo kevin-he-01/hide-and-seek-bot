@@ -8,8 +8,11 @@
             - `3`: Unit ID
             - `4`: Unit X coord
             - `5`: Unit Y coord -->
-            - `1-4`: Data length (32 bit little endian)
-            - `5-?`: A pickled `Agent` object
+            - A `Unit` object encoded in `OBJ`
+            - The `Agent` `OBJ` corresponding to the `Unit`
+        - `OBJ` format, byte locations are relative to the start of this stream of bytes
+            - `0-3`: Data length (32 bit little endian unsigned integer)
+            - `4-?`: The pickled Python object
         - Server response: one byte representing enum number for a direction in `kit.Direction`
     - `0x1`: Notify hitting walls/other units on the same team
     - `0x2`: Do initialization: notify server of map dimension, walls location, etc.
