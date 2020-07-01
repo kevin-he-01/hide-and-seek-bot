@@ -149,5 +149,5 @@ class Agent:
     End a turn
     """
     def end_turn(self):
-        print('D_FINISH')
+        print('D_FINISH', flush=True)
         

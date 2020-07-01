@@ -5,6 +5,10 @@ import sys
 
 import socket, traceback, time, pickle
 
+# *** Enable local debugging (Ex. logging), set to False when submitting ***
+debug = True
+verbose = False
+
 # Create new agent
 agent = Agent()
 
@@ -16,31 +20,42 @@ port = 9009
 sizeofsize = 4 # 32-bit
 endianness = 'little'
 def getdirectionvalue(unit, agent):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cs:
-        def sendobj(obj):
-            pobj = pickle.dumps(obj)
-            cs.sendall(len(pobj).to_bytes(sizeofsize, endianness))
-            cs.sendall(pobj)
+    if agent.round_num == 0:
+        return Direction.STILL.value # Workaround a bug that lag updates if the first move is not done swiftly
+    else:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cs:
+            def sendobj(obj):
+                pobj = pickle.dumps(obj)
+                cs.sendall(len(pobj).to_bytes(sizeofsize, endianness))
+                cs.sendall(pobj)
 
-        cs.connect(('localhost', port))
-        cs.send(bytes([0x0]))
-        sendobj(unit)
-        sendobj(agent)
-        # cs.sendall(bytes([0x0, agent.round_num, agent.id]))
-        # return Direction(cs.recv(1)[0])
-        return cs.recv(1)[0]
+            cs.connect(('localhost', port))
+            cs.send(bytes([0x0]))
+            sendobj(unit)
+            sendobj(agent)
+            # cs.sendall(bytes([0x0, agent.round_num, agent.id]))
+            # return Direction(cs.recv(1)[0])
+            return cs.recv(1)[0]
 
-def main():
+def main(flog):
+    def log(msg):
+        if flog != None:
+            flog.write('{} <{}>: {}\n'.format(time.asctime(), agent.team.name, msg))
+            flog.flush()
+    def vlog(msg):
+        if verbose:
+            log(msg)
+    
     while True:
-
+        vlog('Round #{}/200 begins'.format(agent.round_num + 1))
         commands = []
         units = agent.units # list of units you own
         opposingUnits = agent.opposingUnits # list of units on other team that you can see
         game_map = agent.map # the map
         round_num = agent.round_num # the round number
-
         
-        if (agent.team == Team.SEEKER):
+        # if (agent.team == Team.SEEKER):
+        if True:
             # AI Code for seeker goes here
 
             # time.sleep(delay)
@@ -70,18 +85,27 @@ def main():
             # found by seekers
             pass
 
+        vlog('Submitting commands...')
         # submit commands to the engine
         print(','.join(commands))
 
+        vlog('Sending end turn command...')
         # now we end our turn
         agent.end_turn()
 
+        vlog('Waiting for updates from engine...')
         # wait for update from match engine
+        # time.sleep(0.5)
         agent.update()
+        vlog('Updated bot based on response from engine.')
 
-try:
-    main()
-except Exception:
+if debug:
     with open('bot-error.log', 'a') as errlog:
-        errlog.write('**** {} Failed ****\n'.format(sys.argv[0]))
-        traceback.print_exc(file=errlog)
+        try:
+            main(errlog)
+        except Exception:
+            errlog.write('{}: **** {} Failed during round {} ****\n'.format(time.asctime(), agent.team.name, agent.round_num + 1))
+            traceback.print_exc(file=errlog)
+            errlog.flush()
+else:
+    main(None) # TODO maybe add backup strategy/error recovery as random bot or any other known bug free bot instead?
