@@ -4,9 +4,10 @@
 
 import socket, curses, sys, pickle
 
+import vision
 from kit import Direction as Dir, Agent, Unit, Team
 
-# Configs
+## Configs
 
 port = 9009
 sizeofsize = 4 # 32-bit
@@ -20,9 +21,16 @@ seeker_color = 6
 hider_color = 1
 wall_color = 3
 
+## Configs end
+
 # botdir = Dir.STILL
 keytodir = {'q': Dir.NORTHWEST, 'w': Dir.NORTH, 'e': Dir.NORTHEAST, 'd': Dir.EAST, 'c': Dir.SOUTHEAST, 'x': Dir.SOUTH,
     'z': Dir.SOUTHWEST, 'a': Dir.WEST, 's': Dir.STILL}
+
+initialized = False
+
+class GameOver(Exception):
+    pass
 
 def recvall(sock, mlen):
     buffer = []
@@ -37,9 +45,15 @@ def objrecv(sock):
     length = int.from_bytes(recvall(sock, sizeofsize), endianness)
     return pickle.loads(recvall(sock, length))
 
+def checkinit(inst):
+    if not initialized:
+        raise RuntimeError('Client performed instruction {} without initializing first'.format(hex(inst)))
+
 def procinst(c, inst, wlog, win):
+    global initialized
     wlog('Received instruction from client: {}'.format(hex(inst)))
     if inst == 0x0:
+        checkinit(inst)
         # sdata = bytes([botdir.value])
         unit: Unit = objrecv(c)
         assert isinstance(unit, Unit)
@@ -50,7 +64,7 @@ def procinst(c, inst, wlog, win):
         win.addstr(0, 0, '{} ID {}> '.format(agent.team.name, unit.id), curses.color_pair(seeker_color if agent.team == Team.SEEKER else hider_color))
         win.addstr(2, 0, 'Round: {}/200'.format(agent.round_num + 1))
         win.addstr(3, 0, 'Location (y, x): {}'.format((unit.y, unit.x)))
-        draw_map(win, agent.map)
+        draw_map(win, unit, agent.map)
         win.refresh()
         while True:
             key = win.getkey()
@@ -66,13 +80,24 @@ def procinst(c, inst, wlog, win):
                     sys.exit(3)
                 break
         redraw(win)
+    elif inst == 0x02:
+        agent: Agent = objrecv(c)
+        assert isinstance(agent, Agent)
+        vision.init(agent)
+        initialized = True
+    elif inst == 0x03:
+        # checkinit(inst)
+        wlog('Client notified end of game. Server exiting...')
+        raise GameOver
+        # win.erase()
+        # win.addstr(0, 0, 'Game over')
     elif inst == 0xff:
         wlog('Client requested exit')
         sys.exit()
     else:
         raise RuntimeError("Illegal/unsupported request instruction: {}".format(hex(inst)))
 
-def draw_map(win, mp): # TODO account for visibility and mark invisible blocks as dimmed 0/1
+def draw_map(win, unit, mp): # TODO account for visibility and mark invisible blocks as dimmed 0/1
     for my in range(len(mp)):
         for mx in range(len(mp[my])):
             cell = mp[my][mx]
@@ -84,11 +109,16 @@ def draw_map(win, mp): # TODO account for visibility and mark invisible blocks a
                 attr = curses.color_pair(hider_color)
             else:
                 attr = curses.color_pair(seeker_color)
+            if not vision.isCellVisible(unit, mx, my):
+                attr |= curses.A_DIM
             win.addch(maploc[0] + my, maploc[1] + mx * 2, curses.ACS_BLOCK if cell == 1 else (ord('0') + cell), attr)
 
 def redraw(win):
     win.erase()
-    win.addstr(0, 0, 'Waiting for my turn...', curses.A_DIM)
+    if initialized:
+        win.addstr(0, 0, 'Waiting for my turn...', curses.A_DIM)
+    else:
+        win.addstr(0, 0, 'Waiting for the competition to start...', curses.A_DIM)
     win.refresh()
 
 def prockey(key):
@@ -153,4 +183,7 @@ def main(stdscr: curses.initscr):
                         procinst(c, data[0], wlog, stdscr)
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    try:
+        curses.wrapper(main)
+    except GameOver:
+        print('Game over')
