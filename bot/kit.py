@@ -1,5 +1,10 @@
 import sys
 from enum import Enum
+import vision
+
+# Constants
+MOVE_DELTAS = [[0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1]]
+vision_range_sq = 48 # Squared vision range
 
 def apply_direction(x, y, dir):
     newx = x
@@ -99,6 +104,15 @@ class Agent:
         self.round_num = 0
 
         self._update_map_with_ids()
+        ## Custom additions:
+        # vision.init(self)
+        self.walls = []
+        self.ydim = len(self.map)
+        self.xdim = len(self.map[0])
+        for y, row in enumerate(self.map):
+            for x, cell in enumerate(row):
+                if cell == 1:
+                    self.walls.append((x, y))
 
     def _reset_map(self):
 
@@ -151,3 +165,26 @@ class Agent:
     def end_turn(self):
         print('D_FINISH', flush=True)
         
+    ## Additional functions
+
+    def sightNotBlocked(self, x1, y1, x2, y2):
+        visited = set()
+        def visit(x, y):
+            if (x, y) not in visited:
+                if x == x2 and y == y2:
+                    return True
+                visited.add((x, y))
+                if 0 <= x < self.xdim and 0 <= y < self.ydim and self.map[y][x] != 1 and vision.checkBlocked(x1, y1, x2, y2, x, y):
+                    for dx, dy in MOVE_DELTAS:
+                        nx = x + dx
+                        ny = y + dy
+                        if vision.distance_squared(nx, ny, x2, y2) <= vision.distance_squared(x, y, x2, y2):
+                            if visit(nx, ny):
+                                return True
+            return False
+        return visit(x1, y1)
+    
+    def cellVisible(self, fromx: int, fromy: int, tox: int, toy: int):
+        if vision.distance_squared(tox, toy, fromx, fromy) > vision_range_sq:
+            return False
+        return self.sightNotBlocked(tox, toy, fromx, fromy)

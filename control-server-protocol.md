@@ -16,8 +16,8 @@
         - Server response: one byte representing enum number for a direction in `kit.Direction`
     - `0x1`: Notify hitting walls/other units on the same team
     - `0x2`: Do initialization: send an _initialized_ agent object before the 1st round
-        - Help initializing `vision` module
-        - Notify server of map dimension, walls location, team side etc.
+        <!-- - Help initializing `vision` module
+        - Notify server of map dimension, walls location, team side etc. -->
         - Should only be done once
         - Is this necessary? maybe do this in `0x0`
     - `0x3`: Notify end of the game, or that the client have exited

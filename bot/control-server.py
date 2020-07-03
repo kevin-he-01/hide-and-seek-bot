@@ -4,7 +4,7 @@
 
 import socket, curses, sys, pickle
 
-import vision
+# import vision
 from kit import Direction as Dir, Agent, Unit, Team
 
 ## Configs
@@ -64,7 +64,7 @@ def procinst(c, inst, wlog, win):
         win.addstr(0, 0, '{} ID {}> '.format(agent.team.name, unit.id), curses.color_pair(seeker_color if agent.team == Team.SEEKER else hider_color))
         win.addstr(2, 0, 'Round: {}/200'.format(agent.round_num + 1))
         win.addstr(3, 0, 'Location (y, x): {}'.format((unit.y, unit.x)))
-        draw_map(win, unit, agent.map)
+        draw_map(win, unit, agent)
         win.refresh()
         while True:
             key = win.getkey()
@@ -81,9 +81,9 @@ def procinst(c, inst, wlog, win):
                 break
         redraw(win)
     elif inst == 0x02:
-        agent: Agent = objrecv(c)
-        assert isinstance(agent, Agent)
-        vision.init(agent)
+        # agent: Agent = objrecv(c)
+        # assert isinstance(agent, Agent)
+        # vision.init(agent)
         initialized = True
     elif inst == 0x03:
         # checkinit(inst)
@@ -97,7 +97,8 @@ def procinst(c, inst, wlog, win):
     else:
         raise RuntimeError("Illegal/unsupported request instruction: {}".format(hex(inst)))
 
-def draw_map(win, unit, mp): # TODO account for visibility and mark invisible blocks as dimmed 0/1
+def draw_map(win, unit, agent): # TODO account for visibility and mark invisible blocks as dimmed 0/1
+    mp = agent.map
     for my in range(len(mp)):
         for mx in range(len(mp[my])):
             cell = mp[my][mx]
@@ -109,7 +110,7 @@ def draw_map(win, unit, mp): # TODO account for visibility and mark invisible bl
                 attr = curses.color_pair(hider_color)
             else:
                 attr = curses.color_pair(seeker_color)
-            if not vision.isCellVisible(unit, mx, my):
+            if not agent.cellVisible(unit.x, unit.y, mx, my):
                 attr |= curses.A_DIM
             win.addch(maploc[0] + my, maploc[1] + mx * 2, curses.ACS_BLOCK if cell == 1 else (ord('0') + cell), attr)
 

@@ -90,7 +90,6 @@ def main(flog):
         vlog('Updated bot based on response from engine.')
 
 def start(flog):
-    # vision.init(agent)
     if need_human:
         try:
             human.init(agent)
