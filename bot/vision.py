@@ -1,9 +1,5 @@
 import math
-from kit import Unit, Agent
-
-# Constants
-MOVE_DELTAS = [[0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1]]
-vision_range_sq = 48 # Squared vision range
+# from kit import Unit, Agent
 
 # def sign(n):
 #     return math.copysign(1.0, n) > 0
@@ -49,20 +45,20 @@ def checkBlocked(x1: int, y1: int, x2: int, y2: int, rx: int, ry: int):
     """Checks if line from the center of cell `x1, y1` to that of cell `x2, y2` passes through unit cell with lowest x & lowest y corner at `x3, y3`"""
     return lineIntersectsCell(x1 + 0.5, y1 + 0.5, x2 + 0.5, y2 + 0.5, float(rx), float(ry))
 
-def init(agent: Agent):
-    """Must be called before some functions can be safely called"""
-    global walls
-    global xdim
-    global ydim
-    global game_map
-    game_map = agent.map
-    walls = []
-    ydim = len(agent.map)
-    xdim = len(agent.map[0])
-    for y, row in enumerate(agent.map):
-        for x, cell in enumerate(row):
-            if cell == 1:
-                walls.append((x, y))
+# def init(agent: Agent):
+#     """Must be called before some functions can be safely called"""
+#     global walls
+#     global xdim
+#     global ydim
+#     global game_map
+#     game_map = agent.map
+#     walls = []
+#     ydim = len(agent.map)
+#     xdim = len(agent.map[0])
+#     for y, row in enumerate(agent.map):
+#         for x, cell in enumerate(row):
+#             if cell == 1:
+#                 walls.append((x, y))
 
 def distance_squared(x1, y1, x2, y2):
     dx = x2 - x1
@@ -77,24 +73,24 @@ def distance_squared(x1, y1, x2, y2):
 #             return False
 #     return True
 
-def sightNotBlocked(x1, y1, x2, y2):
-    visited = set()
-    def visit(x, y):
-        if (x, y) not in visited:
-            if x == x2 and y == y2:
-                return True
-            visited.add((x, y))
-            if 0 <= x < xdim and 0 <= y < ydim and game_map[y][x] != 1 and checkBlocked(x1, y1, x2, y2, x, y):
-                for dx, dy in MOVE_DELTAS:
-                    nx = x + dx
-                    ny = y + dy
-                    if distance_squared(nx, ny, x2, y2) <= distance_squared(x, y, x2, y2):
-                        if visit(nx, ny):
-                            return True
-        return False
-    return visit(x1, y1)
+# def sightNotBlocked(x1, y1, x2, y2):
+#     visited = set()
+#     def visit(x, y):
+#         if (x, y) not in visited:
+#             if x == x2 and y == y2:
+#                 return True
+#             visited.add((x, y))
+#             if 0 <= x < xdim and 0 <= y < ydim and game_map[y][x] != 1 and checkBlocked(x1, y1, x2, y2, x, y):
+#                 for dx, dy in MOVE_DELTAS:
+#                     nx = x + dx
+#                     ny = y + dy
+#                     if distance_squared(nx, ny, x2, y2) <= distance_squared(x, y, x2, y2):
+#                         if visit(nx, ny):
+#                             return True
+#         return False
+#     return visit(x1, y1)
 
-def isCellVisible(unit: Unit, x: int, y: int):
-    if distance_squared(x, y, unit.x, unit.y) > vision_range_sq:
-        return False
-    return sightNotBlocked(x, y, unit.x, unit.y)
+# def isCellVisible(unit: Unit, x: int, y: int):
+#     if distance_squared(x, y, unit.x, unit.y) > vision_range_sq:
+#         return False
+#     return sightNotBlocked(x, y, unit.x, unit.y)

@@ -28,7 +28,7 @@ def init(agent: Agent):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cs:
         cs.connect(('localhost', port))
         cs.send(bytes([0x2]))
-        sendobj(cs, agent)
+        # sendobj(cs, agent)
 
 def handle(agent: Agent, commands: list):
     for _, unit in enumerate(agent.units):
