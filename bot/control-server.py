@@ -62,7 +62,7 @@ def procinst(c, inst, wlog, win):
         win.erase()
         # win.addstr(0, 0, 'Input your direction: ')
         win.addstr(0, 0, '{} ID {}> '.format(agent.team.name, unit.id), curses.color_pair(seeker_color if agent.team == Team.SEEKER else hider_color))
-        win.addstr(2, 0, 'Round: {}/200'.format(agent.round_num + 1))
+        win.addstr(2, 0, 'Round: {}/200'.format(agent.round_num))
         win.addstr(3, 0, 'Location (y, x): {}'.format((unit.y, unit.x)))
         draw_map(win, unit, agent)
         win.refresh()

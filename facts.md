@@ -1,6 +1,29 @@
 # Useful facts
 - Vision (See https://github.com/acmucsd/hide-and-seek-ai/blob/f06770a423b0602df8a6393e0c470c2027bc54a5/src/Map/index.ts)
     - vision range = sqrt(48), inclusive, aka. r = [0, sqrt(48)]
+    - quoting from it:
+    ```typescript
+    export const defaultMatchConfigs: HideAndSeekConfigs = {
+      liveView: true,
+      delay: 0.2,
+      roundLimit: 200,
+      seed: 0,
+      replayDirectory: './replays',
+      mode: GameModes.tag,
+      randomizeSeeker: true,
+      storeReplay: true,
+      parameters: {
+        VISION_RANGE: 48,
+        DENSITY: 0.35,
+        SEEKER_MAX: 3,
+        MIN_HEIGHT: 16,
+        MIN_WIDTH: 16,
+        MAX_HEIGHT: 24,
+        MAX_WIDTH: 24
+      }
+    }
+    ```
+
 - Constants
     - Max number of units on a team: 3
     - either horizontal or vertical symmetry
