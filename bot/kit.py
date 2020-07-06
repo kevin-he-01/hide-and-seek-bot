@@ -1,7 +1,9 @@
 import sys
 import queue
 from enum import Enum
-import vision, opponent
+import vision, opponent as mod_op
+
+from typing import List, Tuple
 
 # Constants
 MOVE_DELTAS = [[0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1]]
@@ -89,7 +91,7 @@ class Agent:
     Initialize Agent for the `Match`
     User should edit this according to their `Design`
     """
-    def initialize(self):
+    def initialize(self): # Logging function
         meta = read_input().split(",")
         self.id = int(meta[0])
         self.team = Team(int(meta[1]))
@@ -120,7 +122,31 @@ class Agent:
                 if cell == 1:
                     self.walls.append((x, y))
         # Initialize opponents
-        opponent.init_opponents(self)
+        mod_op.init_opponents(self)
+    
+    def init_log(self, log, enable_log):
+        """`log` must be a callable function"""
+        self.log = log # Can only use log after the competition started (log initialized, in the main function)
+        self.enable_log = enable_log # Avoid computationally expensive actions (Ex. constructing graphical representation of a map) needded only for logging
+    
+    def __getstate__(self):
+        # Copy the object's state from self.__dict__ which contains
+        # all our instance attributes. Always use the dict.copy()
+        # method to avoid modifying the original state.
+        state = self.__dict__.copy()
+        # Unpicklable
+        del state['log']
+        # Unnecessary
+        del state['enable_log']
+        return state
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.log = lambda *args, **kwargs: None
+        self.enable_log = False
+    
+    def vlog(self, *args, **kwargs):
+        self.log(*args, **kwargs, level='DEBUG')
 
     def _reset_map(self):
 
@@ -207,7 +233,23 @@ class Agent:
             return False
         return self.sightNotBlocked(tox, toy, fromx, fromy)
     
-    def pathing(self, x1, y1, x2, y2, escape=False):
+    def visibleCells(self, fromx, fromy):
+        """Return an iterator of visible cells `(x1, y1), (x2, y2), ...` from (fromx, fromy)"""
+        for toy in range(self.ydim):
+            for tox in range(self.xdim):
+                if self.cellVisible(fromx, fromy, tox, toy):
+                    yield (tox, toy)
+    
+    # def anyVisibleCells(self, fromlist):
+    #     """Return an iterator of visible cells `(x1, y1), (x2, y2), ...` from any member of `fromlist`: a list of "from" cells """
+    #     for toy in range(self.ydim):
+    #         for tox in range(self.xdim):
+    #             for fromx, fromy in fromlist:
+    #                 if self.cellVisible(fromx, fromy, tox, toy):
+    #                     yield (tox, toy)
+    #                     break
+    
+    def pathing(self, x1, y1, x2, y2, escape=False) -> Tuple[List[int], int]:
         # """
         # Return pair `(next_directions: list[int], distance)`
         # where `next_directions` is a list of ordinals of possible next `Direction`s.
@@ -229,7 +271,7 @@ class Agent:
         bq.put((x2, y2, 8, 0)) # (x, y, inverse direction ordinal, distance from (x2, y2)/number of steps required)
         visited = set()
         distance = -1
-        nxdirs = []
+        nxdirs: List[int] = []
         try:
             while True:
                 x, y, dirnum, dist = bq.get_nowait()
@@ -256,7 +298,7 @@ class Agent:
             raise NoPath
         else:
             if escape:
-                nxsteps = []
+                nxsteps: List[int] = []
                 # for ndirnum in nxdirs:
                 for ndirnum, (dx, dy) in enumerate(direction_move_deltas):
                     if ndirnum not in nxdirs:
@@ -265,3 +307,40 @@ class Agent:
             else:
                 nxsteps = nxdirs
             return nxsteps, distance # TODO check other units when computing nxdirs using immediate_walkable?
+    
+    def opponents_update(self):
+        opponents = mod_op.opponents
+        dead_op_ids = []
+        for op in opponents.values():
+            # try:
+            #     op.update() # Must be called before everything else that uses `opponents`
+            # except Death:
+            #     dead_op_ids.append(op.id)
+            op.update()
+        for unit in self.units:
+            possible_op_ids = set()
+            for y in range(self.ydim):
+                for x in range(self.xdim):
+                    if vision.distance_squared(x, y, unit.x, unit.y) == unit.distance:
+                        for op in opponents.values():
+                            if op.possibility_map[y][x]:
+                                possible_op_ids.add(op.id)
+            if not possible_op_ids:
+                self.log('No opposing units could be at distance {} away as reported by game server'.format(unit.distance), unitid=unit.id, level='ERROR')
+            elif len(possible_op_ids) == 1:
+                opid = possible_op_ids.pop()
+                self.log('Limited opponent {} to ring of distance {}'.format(opid, unit.distance), level='DEBUG')
+                opponents[opid].limit(lambda x0, y0: vision.distance_squared(x0, y0, unit.x, unit.y) == unit.distance)
+        for op in opponents.values():
+            try:
+                op.post_update()
+            except mod_op.Death:
+                if self.team == Team.HIDER:
+                    self.log('Opposing seekers should never be dead!', level='ERROR')
+                dead_op_ids.append(op.id)
+        if dead_op_ids:
+            self.log('Dead opponents in this round: {}. Removing them form the game.'.format(dead_op_ids))
+        for dead_op_id in dead_op_ids:
+            del opponents[dead_op_id]
+        if self.enable_log:
+            mod_op.trace_possibility_map(self)
