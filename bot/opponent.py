@@ -22,6 +22,7 @@ class Opponent:
             self.primary_loc = None
             self.lastseen = None
             self.location_count = ourteam.ydim * ourteam.xdim
+            # FIXME self.possible_list here
         else:
             self.possibility_map = [[False] * ourteam.xdim for _ in range(ourteam.ydim)] # True = possible location, False = impossible location (including walls)
             self.set_primary_loc(initx, inity)
@@ -46,6 +47,7 @@ class Opponent:
                 self.possibility_map[y0][x0] = (x0 == x and y0 == y)
         self._set_primary_loc(x, y)
         self.location_count = 1
+        self.possible_list = [(x, y)]
     
     def _clear_primary_loc(self): # Note: it forces values to be None without altering `self.possibility_map` or statistics (Ex. `self.location_count` at all)
         self.primary_loc = None
@@ -55,12 +57,14 @@ class Opponent:
         cnt = 0
         locy = -1
         locx = -1
+        self.possible_list = []
         for y0 in range(self.agent.ydim):
             for x0 in range(self.agent.xdim):
                 if self.possibility_map[y0][x0]:
                     locx = x0
                     locy = y0
                     cnt += 1
+                    self.possible_list.append((x0, y0))
                 else:
                     if self.lastseen != None and self.lastseen[0] == x0 and self.lastseen[1] == y0:
                         self.lastseen = None # Last seen is not actually what its literal meaning suggests. It is the most plausible location if the hider never moves

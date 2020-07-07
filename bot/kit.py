@@ -1,9 +1,8 @@
-import sys
-import queue
+import sys, queue, math
 from enum import Enum
 import vision, opponent as mod_op
 
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Union
 
 # Constants
 MOVE_DELTAS = [[0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1]]
@@ -11,7 +10,11 @@ MOVE_DELTAS = [[0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1,
 ## In (x, y) form
 direction_deltas = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, 0)]
 direction_move_deltas = direction_deltas[:8]
+orthogonal_deltas = [(1, 0), (0, -1), (-1, 0), (0, 1)]
 vision_range_sq = 48 # Squared vision range
+
+loop_min_length = 6 # TODO 8 is safer and require less bot intelligence (stay still tactic when the enemy is directly at the other end of the loop)
+# loop_length = ((du + 2) / 2 + (dv + 2) / 2) * 2 = du + dv + 4
 
 def apply_direction(x, y, dir):
     newx = x
@@ -65,18 +68,77 @@ class Direction(Enum):
     NORTHWEST = 7
     STILL = 8
 
+class UnitInfo:
+    def __init__(self):
+        self.hider_state = HiderState.FRESH
+        self.hider_loop: Union[None, Loop] = None
+        self.hiding_target = None
+
 class Unit:
-    def __init__(self, id, x, y, dist):
+    def __init__(self, id, x, y, dist, agent):
         self.id = id
         self.x = x
         self.y = y
         self.distance = dist
+        self.agent = agent
+        # self.hider_state = HiderState.FRESH
+        # self.hider_loop = None
+        # self.hiding_target = None
+    
+    def get_info(self) -> UnitInfo:
+        return self.agent.unit_infos[self.id]
 
     def move(self, dir: int) -> str:
         return "%d_%d" % (self.id, dir)
 
 class NoPath(Exception):
     pass
+
+class ObstructedLoop(Exception):
+    pass
+
+class Loop:
+    def __init__(self, agent, x0, x1, y0, y1, u0, u1, v0, v1, loop_length):
+        self.cell_set = set()
+        self.loop_length = loop_length
+        # for u in range(u0, u1 + 1):
+        #     for v in range(v0, v1 + 1):
+        def checkuv(u, v):
+            return u0 - 1 <= u <= u1 + 1 and v0 - 1 <= v <= v1 + 1
+        def checkall(x, y):
+            u = x + y
+            v = y - x
+            return x0 - 1 <= x <= x1 + 1 and y0 - 1 <= y <= y1 + 1 and checkuv(u, v)
+        # for u in range(u0 - 1, u1 + 2):
+        #     for v in range(v0 - 1, v1 + 2):
+        #         if (u + v) % 2 == 0:
+        #             lix = (u - v) // 2
+        #             liy = (u + v) // 2
+        for lix in range(x0 - 1, x1 + 2):
+            for liy in range(y0 - 1, y1 + 2):
+                u = lix + liy
+                v = liy - lix
+                if checkuv(u, v):
+                    good = False
+                    for dx, dy in orthogonal_deltas:
+                        if not checkall(lix + dx, liy + dy):
+                            good = True
+                            break
+                    if good:
+                        if not agent.walkable(lix, liy):
+                            agent.vlog('Obstructed loop {} to {} at {}'.format((x0, y0), (x1, y1), (lix, liy)))
+                            raise ObstructedLoop
+                        self.cell_set.add((lix, liy))
+                        # agent.loop_index[liy][lix].append(self) # Do it in agent after checking no ObstructedLoop
+        self.x0 = x0
+        self.x1 = x1
+        self.y0 = y0
+        self.y1 = y1
+
+class HiderState(Enum):
+    HIDING = 0
+    CIRCLING = 1
+    FRESH = 2
 
 class Agent:
     round_num = 0
@@ -123,11 +185,29 @@ class Agent:
                     self.walls.append((x, y))
         # Initialize opponents
         mod_op.init_opponents(self)
+        # # For hiders, find loops
+        # if self.team == Team.HIDER:
+        #     self.find_loops()
+        self.unit_infos: Dict[int, UnitInfo] = dict()
+        for unit in self.units:
+            self.unit_infos[unit.id] = UnitInfo()
     
     def init_log(self, log, enable_log):
         """`log` must be a callable function"""
         self.log = log # Can only use log after the competition started (log initialized, in the main function)
         self.enable_log = enable_log # Avoid computationally expensive actions (Ex. constructing graphical representation of a map) needded only for logging
+    
+    def post_log_init(self):
+        # For hiders, find loops
+        if self.team == Team.HIDER:
+            self.find_loops()
+            # possible_locations = []
+            # for y in range(self.ydim):
+            #     for x in range(self.xdim):
+            #         for op in mod_op.opponents.values():
+            #             if op.possibility_map[y][x]:
+            #                 possible_locations.append((x, y))
+            # self.seeker_map = self.generate_distance_map(possible_locations)
     
     def __getstate__(self):
         # Copy the object's state from self.__dict__ which contains
@@ -173,7 +253,7 @@ class Agent:
         for _, val in enumerate(units_and_coords):
             if (val != ""):
                 [id, x, y, dist] = [int(k) for k in val.split("_")]
-                self.units.append(Unit(id, x, y, dist))
+                self.units.append(Unit(id, x, y, dist, self))
 
         units_and_coords = read_input().split(",")
         
@@ -181,7 +261,7 @@ class Agent:
         for _, value in enumerate(units_and_coords):
             if (value != ""):
                 [id, x, y] = [int(k) for k in value.split("_")]
-                self.opposingUnits.append(Unit(id, x, y, -1))
+                self.opposingUnits.append(Unit(id, x, y, -1, self))
 
     """
     Updates Agent's own known state of `Match`
@@ -344,3 +424,139 @@ class Agent:
             del opponents[dead_op_id]
         if self.enable_log:
             mod_op.trace_possibility_map(self)
+        # Hider specific
+        if self.team == Team.HIDER:
+            possible_locations = []
+            for y in range(self.ydim):
+                for x in range(self.xdim):
+                    for op in mod_op.opponents.values():
+                        if op.possibility_map[y][x]:
+                            possible_locations.append((x, y))
+                            break
+            self.seeker_map = self.generate_distance_map(possible_locations)
+    
+    def get_wall_block_dim(self, x0, y0, scanned): # Return none when connected to border
+        # u = x + y, v = y - x
+        minx = math.inf
+        maxx = -math.inf
+        miny = math.inf
+        maxy = -math.inf
+        minu = math.inf
+        maxu = -math.inf
+        minv = math.inf
+        maxv = -math.inf
+        # visited = set()
+        bad = False
+        def visit(x, y):
+            nonlocal minx, maxx, miny, maxy, minu, maxu, minv, maxv, bad
+            if not self.in_map(x, y):
+                # return False
+                bad = True # Continue scanning out neighbors
+            elif self.map[y][x] == 1: # Non-walls not interested
+                if not scanned[y][x]:
+                    scanned[y][x] = True
+                    u = x + y
+                    v = y - x
+                    minx = min(minx, x)
+                    maxx = max(maxx, x)
+                    miny = min(miny, y)
+                    maxy = max(maxy, y)
+                    minu = min(minu, u)
+                    maxu = max(maxu, u)
+                    minv = min(minv, v)
+                    maxv = max(maxv, v)
+                    for dx, dy in orthogonal_deltas:
+                        nx = x + dx
+                        ny = y + dy
+                        visit(nx, ny)
+            #             if not visit(nx, ny):
+            #                 return False
+            # return True
+        visit(x0, y0)
+        return None if bad else (minx, maxx, miny, maxy, minu, maxu, minv, maxv)
+    
+    # def slice_corners(self, x0, y0, x1, y1):
+    #     for 
+
+    def find_loops(self):
+        """Find the convex hulls around "island" wall blocks (blocks of walls not attached to borders) within the map"""
+        self.loop_index: List[List[List[Loop]]] = [[ [] for _ in range(self.xdim)] for _ in range(self.ydim)]
+        self.loops = []
+        scanned = [[False] * self.xdim for _ in range(self.ydim)]
+        for y in range(self.ydim):
+            for x in range(self.xdim):
+                if self.map[y][x] == 1:
+                    if not scanned[y][x]:
+                        dims = self.get_wall_block_dim(x, y, scanned)
+                        if dims != None:
+                            x0, x1, y0, y1, u0, u1, v0, v1 = dims
+                            loop_length = u1 - u0 + v1 - v0 + 4
+                            self.vlog('Identified wall block from {} to {} and from (u, v) {} to {}. Loop length: {}'.format((x0, y0), (x1, y1), (u0, v0), (u1, v1), loop_length))
+                            if loop_length >= loop_min_length:
+                                try:
+                                    loop = Loop(self, x0, x1, y0, y1, u0, u1, v0, v1, loop_length)
+                                except ObstructedLoop:
+                                    pass
+                                else:
+                                    self.loops.append(loop)
+                                    for x, y in loop.cell_set:
+                                        self.loop_index[y][x].append(loop)
+                            # loop_length = u1 - u0 + v1 - v0 + 4
+                            # self.vlog('Identified wall block from {} to {} and from (u, v) {} to {}. Loop length: {}'.format((x0, y0), (x1, y1), (u0, v0), (u1, v1), loop_length))
+                            # # for u in range(u0, u1 + 1):
+                            # #     for v in range(v0, v1 + 1):
+                            # if loop_length >= loop_min_length:
+                            #     for u in range(u0 - 1, u1 + 2):
+                            #         for v in range(v0 - 1, v1 + 2):
+                            #             if (u + v) % 2 == 0:
+                            #                 lix = (u - v) // 2
+                            #                 liy = (u + v) // 2
+                            #                 if self.walkable(lix, liy):
+                            #                     self.loop_index[liy][lix] += 1
+        if self.enable_log:
+            def genrows():
+                def getcode(x, y):
+                    count = len(self.loop_index[y][x])
+                    if self.map[y][x] == 1:
+                        assert count == 0
+                        return 'W'
+                    else:
+                        sdigit = str(count)
+                        if len(sdigit) == 1:
+                            return sdigit
+                        else:
+                            return 'X'
+                for y in range(self.ydim):
+                    yield ' '.join((getcode(x, y) for x in range(self.xdim)))
+            self.log('Loop index map:\n' + '\n'.join(genrows()))
+
+    def debug_distance_map(self, mp):
+        self.vlog('Distance map:\n' + '\n'.join([' '.join([str(e).ljust(4) for e in row]) for row in mp]))
+    
+    def generate_distance_map(self, targets):
+        dist_map = [[math.inf] * self.xdim for _ in range(self.ydim)]
+        bq = queue.Queue()
+        for x0, y0 in targets:
+            bq.put((x0, y0, 0)) # (x, y, inverse direction ordinal, distance from (x2, y2)/number of steps required)
+        visited = set()
+        try:
+            while True:
+                x, y, dist = bq.get_nowait()
+                if self.walkable(x, y):
+                    # if x == x1 and y == y1:
+                    #     if distance == -1:
+                    #         distance = dist
+                    #     elif dist > distance:
+                    #         break
+                    #     nxdirs.append(dirnum)
+                    if (x, y) not in visited:
+                        visited.add((x, y))
+                        dist_map[y][x] = dist
+                        for (dx, dy) in direction_move_deltas:
+                            nx = x + dx # Direction is inversed since it searches path from (x2, y2) to (x1, y1)
+                            ny = y + dy
+                            # if self.walkable(nx, ny):
+                            bq.put((nx, ny, dist + 1))
+        except queue.Empty:
+            pass
+        return dist_map

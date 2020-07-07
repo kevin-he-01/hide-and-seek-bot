@@ -1,5 +1,5 @@
 # Bot name: clairvoyant
-from kit import Agent, Team, Direction, apply_direction, NoPath
+from kit import Agent, Team, Direction, apply_direction, NoPath, HiderState, Loop, UnitInfo
 from opponent import opponents, Death, Opponent
 import opponent as mod_op
 import kit, vision
@@ -11,15 +11,15 @@ import sys
 import traceback, time
 
 # *** Set to True when submitting! ***
-submit = False
+submit = True
 # Enable local debugging (Ex. exception/error display and logging)
 debug = True
 # Enable verbose logging, only have effect when debug = True
 verbose = True
 # Either Team.SEEKER or Team.HIDER depending on which one to let a human control
-human_assist = Team.HIDER
+human_assist = None
 # Random seed for seekers[0] and hiders[1], set to None to randomize
-seeds = [None, None]
+seeds = [2205812789, 3518803024] # Bug seeds
 
 if submit:
     debug = False
@@ -55,6 +55,7 @@ def main(logs):
     random.seed(seed)
     log('Competition started with team seed: {}'.format(seed))
     agent.init_log(log, len(logs) > 0)
+    agent.post_log_init()
     
     while True:
         vlog('Round #{}/200 begins'.format(agent.round_num))
@@ -62,7 +63,7 @@ def main(logs):
         units = agent.units # list of units you own
         opposingUnits = agent.opposingUnits # list of units on other team that you can see
         # game_map = agent.map # the map
-        # round_num = agent.round_num # the round number
+        round_num = agent.round_num # the round number
         
         vlog('Visible opponent ids: {}'.format(list(map(lambda unit: unit.id, opposingUnits))))
         agent.opponents_update()
@@ -96,6 +97,7 @@ def main(logs):
                     # else:
                     #     commands.append(unit.move(myDirection))
                     closest_dist = math.inf
+                    lowest_uncertainty = math.inf
                     best_moves = [] # Do nothing and stay still
                     # primary_target = False # target has primary location, usually in sight
                     # dead_hider_ids = []
@@ -103,34 +105,39 @@ def main(logs):
                         # lastloc = op.get_primary_loc()
                         lastloc = op.lastseen
                         if lastloc != None:
-                            opx, opy = lastloc
-                            try:
-                                nxdir, dist = agent.pathing(unit.x, unit.y, opx, opy)
-                                uvlog('Distance to opponent {}: {}'.format(op.id, dist))
-                                assert len(nxdir) > 0
-                                if dist <= 1:
-                                    ulog("Hider {} should be dead and shouldn't be on the stage!".format(op.id), level='WARN')
-                                    # dead_hider_ids.append(op.id)
-                                else:
-                                    if dist < closest_dist:
-                                        closest_dist = dist
-                                        if op.primary_loc != None:
-                                            uvlog('Greedily selecting next move from {} by distance'.format(list(map(Direction, nxdir))))
-                                            bestmv = None
-                                            r2distbest = math.inf
-                                            for candidate in nxdir:
-                                                cdist = vision.distance_squared(*apply_direction(unit.x, unit.y, candidate), opx, opy)
-                                                if cdist < r2distbest:
-                                                    r2distbest = cdist
-                                                    bestmv = candidate
-                                            best_moves = [bestmv]
-                                        else:
-                                            best_moves = nxdir
-                            except NoPath:
-                                ulog('No path to hider ID {}'.format(op.id))
+                            goto = lastloc
                         else:
-                            ulog('FIXME: no primary locations!', level='WARN')
-                            pass # FIXME use more advanced pathing (Ex. sweep search) in this case
+                            # goto = random.choice() # FIXME for seed reasons
+                            goto = op.possible_list[0]
+                            # ulog('FIXME: no primary locations!', level='WARN')
+                            # pass # FIXME use more advanced pathing (Ex. sweep search) in this case
+                        uncertainty = op.location_count
+                        opx, opy = goto
+                        try:
+                            nxdir, dist = agent.pathing(unit.x, unit.y, opx, opy)
+                            uvlog('Distance to opponent {}: {}'.format(op.id, dist))
+                            assert len(nxdir) > 0
+                            if dist <= 1:
+                                ulog("Hider {} should be dead and shouldn't be on the stage!".format(op.id), level='WARN')
+                                # dead_hider_ids.append(op.id)
+                            else:
+                                if (uncertainty, dist) < (lowest_uncertainty, closest_dist):
+                                    closest_dist = dist
+                                    lowest_uncertainty = uncertainty
+                                    if op.primary_loc != None:
+                                        uvlog('Greedily selecting next move from {} by distance'.format(list(map(Direction, nxdir))))
+                                        bestmv = None
+                                        r2distbest = math.inf
+                                        for candidate in nxdir:
+                                            cdist = vision.distance_squared(*apply_direction(unit.x, unit.y, candidate), opx, opy)
+                                            if cdist < r2distbest:
+                                                r2distbest = cdist
+                                                bestmv = candidate
+                                        best_moves = [bestmv]
+                                    else:
+                                        best_moves = nxdir
+                        except NoPath:
+                            ulog('No path to hider ID {}'.format(op.id))
                     # for dead_hider_id in dead_hider_ids:
                     #     del opponents[dead_hider_id]
                     if len(best_moves) == 0:
@@ -148,7 +155,80 @@ def main(logs):
                 # AI Code for hider goes here
                 # hider code, which does nothing, sits tight and hopes it doesn't get 
                 # found by seekers
-                pass
+                if debug:
+                    agent.debug_distance_map(agent.seeker_map)
+                for unit in units:
+                    def ulog(*args, **kwargs):
+                        log(*args, **kwargs, unitid=unit.id)
+                    def uvlog(*args, **kwargs):
+                        vlog(*args, **kwargs, unitid=unit.id)
+                    myinfo = unit.get_info()
+                    hider_state = myinfo.hider_state
+                    if hider_state == HiderState.FRESH:
+                        loop_candidates = set()
+                        viable_target_cells = []
+                        my_distance_map = agent.generate_distance_map([(unit.x, unit.y)])
+                        for y in range(agent.ydim):
+                            for x in range(agent.xdim):
+                                if my_distance_map[y][x] != math.inf and my_distance_map[y][x] + 2 <= agent.seeker_map[y][x]:
+                                    for loop in agent.loop_index[y][x]:
+                                        viable_target_cells.append((x, y))
+                                        loop_candidates.add(loop)
+                        ulog('Viable loops: {}'.format(list(map(lambda loop: ((loop.x0, loop.y0), (loop.x1, loop.y1)), loop_candidates))))
+                        if len(loop_candidates) == 0:
+                            ulog('Unable to find a viable loop!', level='WARN')
+                        else:
+                            for other in units:
+                                otherinfo = other.get_info()
+                                if len(loop_candidates) > 1:
+                                    if other is not unit and otherinfo.hider_loop != None and otherinfo.hider_loop in loop_candidates:
+                                        loop_candidates.remove(otherinfo.hider_loop)
+                                else:
+                                    break
+                            hider_loop: Loop = random.choice(list(loop_candidates))
+                            myinfo.hider_loop = hider_loop
+                            ulog('Chosen loop: {} to {}'.format((hider_loop.x0, hider_loop.y0), (hider_loop.x1, hider_loop.y1)))
+                            # for px, py in hider_loop.cell_set:
+                            for px, py in viable_target_cells:
+                                for other in units:
+                                    if other.get_info().hiding_target == (px, py):
+                                        break
+                                else:
+                                    myinfo.hiding_target = (px, py)
+                                    break
+                            assert myinfo.hiding_target != None
+                            ulog('Chosen hiding target {}'.format(myinfo.hiding_target))
+                            if myinfo.hiding_target == None:
+                                hidex, hidey = viable_target_cells[0]
+                                ulog('Have to share hiding target with another unit all @ {}!'.format((hidex, hidey)), level='ERROR')
+                                myinfo.hiding_target = (hidex, hidey)
+                            ulog('Chosen hiding target: {}'.format(myinfo.hiding_target))
+                            hider_state = HiderState.HIDING
+                    elif hider_state == HiderState.HIDING:
+                        nxdir, dist = agent.pathing(unit.x, unit.y, myinfo.hiding_target[0], myinfo.hiding_target[1])
+                        if dist == 0:
+                            hider_state = HiderState.CIRCLING
+                            ulog('Entered circling state')
+                        else:
+                            chosendir = random.choice(nxdir)
+                            uvlog('Moving with direction {} toward {} to hide'.format(Direction(chosendir), myinfo.hiding_target))
+                            commands.append(unit.move(chosendir))
+                    if hider_state == HiderState.CIRCLING:
+                        uvlog('Circling: seeker distance here: {}'.format(agent.seeker_map[unit.y][unit.x]))
+                        maxdist = agent.seeker_map[unit.y][unit.x] # Not moving take precedence
+                        mdmove = 8
+                        # Greedily choose the lowest distance
+                        for dirnum, (dx, dy) in enumerate(kit.direction_deltas):
+                            nx = unit.x + dx
+                            ny = unit.y + dy
+                            if agent.walkable(nx, ny) and (nx, ny) in myinfo.hider_loop.cell_set:
+                                newdist = agent.seeker_map[ny][nx]
+                                if newdist >= maxdist:
+                                    mdmove = dirnum
+                                    maxdist = newdist
+                        uvlog('Moving toward {} for greatest seeker distance {}'.format(Direction(mdmove), maxdist))
+                        commands.append(unit.move(mdmove))
+                    unit.get_info().hider_state = hider_state
 
         # vlog('Submitting commands...')
         # submit commands to the engine
