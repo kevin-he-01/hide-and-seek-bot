@@ -1,0 +1,5 @@
+# All logs files are ignored
+*
+# Except this file
+!.gitignore
+# This file is needed for `archive-bot-logs.sh` to work on checked out repos
