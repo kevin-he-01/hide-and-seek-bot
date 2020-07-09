@@ -11,15 +11,16 @@ import sys
 import traceback, time
 
 # *** Set to True when submitting! ***
-submit = True
+submit = False
 # Enable local debugging (Ex. exception/error display and logging)
 debug = True
 # Enable verbose logging, only have effect when debug = True
 verbose = True
 # Either Team.SEEKER or Team.HIDER depending on which one to let a human control
-human_assist = None
+human_assist = Team.SEEKER
 # Random seed for seekers[0] and hiders[1], set to None to randomize
-seeds = [2205812789, 3518803024] # Bug seeds
+# seeds = [2205812789, 3518803024] # Bug seeds
+seeds = [None, None]
 
 if submit:
     debug = False
