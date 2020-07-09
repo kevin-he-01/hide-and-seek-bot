@@ -1,7 +1,7 @@
 # Seed Bank
 ## By number of seekers/hiders:
 - 1
-    - 809668 (Ex. `match_sxQ9nE5myyIJ.json`)
+    - 809668
     - 818174
     - 982714 (Have a crazily large loop)
 - 2
@@ -11,7 +11,7 @@
 - 3
     - 173062
     - 774157
-    - 945838 (`match_SLiZcvioIWs4.json`)
+    - 945838
     - 383746
     - 833910
     - 39905
