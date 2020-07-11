@@ -1,5 +1,11 @@
 # Hide and Seek Bot: Clairvoyant
 - 🥉 Third place submission entry to [the first AI Competition hosted by ACM@UCSD](https://github.com/acmucsd/hide-and-seek-ai).
+    - Other notable competitors
+        1. 🥇 1st place: Joe Cai's "pizza" (not yet open source)
+        2. 🥈 2nd place: Jeff Xu's "[top ten anime betrayals](https://github.com/Jjx003/ACM-Hide-And-Seek-Bot)"
+        3. 🥉 3rd place: Kevin He's "clairvoyant" (this bot)
+        4. 🎉 4th place: Ishaan Kavoori's "[Ultron](https://github.com/ishaanharry/ACM-AI-Competition-HideAndSeek)"
+        5. 🎉 5th place: Stone Tao's "[breadbot](https://github.com/acmucsd/hide-and-seek-ai/tree/master/breadbot)" (the admin bot)
 - Written completely in Python 3 with Python 3.6 type hints, which are removed using [`strip-hints`](https://github.com/abarker/strip-hints) in the submitted version to be compliant with Python 3.5 on the competition server
 ## Running the bot
 To run the bot, make sure you have Python 3 installed (minimum version: 3.6) as well as all [necessary requirements](https://github.com/acmucsd/hide-and-seek-ai#getting-started) to run the competition locally. After that, simply run the following
